@@ -3,6 +3,8 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"k8s.io/utils/mount"
+	"os"
 	"time"
 
 	"github.com/onsi/ginkgo"
@@ -157,6 +159,41 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 
 		FileSystemId = id
 		ginkgo.By(fmt.Sprintf("Created EFS filesystem %q in region %q for cluster %q", FileSystemId, Region, ClusterName))
+		//Sleep 5 minutes to allow file system bootstrapping
+		ginkgo.By("Sleeping 5 minutes to allow file system bootstrapping")
+		time.Sleep(5 * time.Minute)
+		ginkgo.By("Done sleeping. Now proceeding to test access point creation")
+		accessPointId, err := c.CreateAccessPoint(FileSystemId, ClusterName)
+		if err != nil {
+			framework.ExpectNoError(err, "creating access point")
+		}
+		ginkgo.By(fmt.Sprintf("Created access point %q", accessPointId))
+
+		ginkgo.By("Now proceeding to mount using access point")
+		mountOptions := []string{"tls", "accesspoint=" + accessPointId}
+		target := "/mnt/accessPointTest"
+		if err = makeDir(target); err != nil {
+			framework.ExpectNoError(err, fmt.Sprintf("Failed to create temp directory %q", target))
+		}
+
+		defer os.RemoveAll(target)
+
+		m := mount.New("")
+		if err = m.Mount(FileSystemId, target, "efs", mountOptions); err != nil {
+			framework.ExpectNoError(err, "Failed to mount using access point")
+		}
+
+		ginkgo.By("Mount succeeded, now unmounting...")
+		m.Unmount(target)
+
+		ginkgo.By("Unmount succeeded, now proceeding to delete access point...")
+
+		//ginkgo.By("Now proceeding to test delete access point")
+		err = c.DeleteAccessPoint(accessPointId)
+		if err != nil {
+			framework.ExpectNoError(err, "deleting access point")
+		}
+		ginkgo.By(fmt.Sprintf("Deleted access point %q", accessPointId))
 		deleteFileSystem = true
 	} else {
 		ginkgo.By(fmt.Sprintf("Using already-created EFS file system %q", FileSystemId))
@@ -428,4 +465,14 @@ func makeEFSPV(name, path string, volumeAttributes map[string]string) *v1.Persis
 			AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
 		},
 	}
+}
+
+func makeDir(path string) error {
+	err := os.MkdirAll(path, os.FileMode(0777))
+	if err != nil {
+		if !os.IsExist(err) {
+			return err
+		}
+	}
+	return nil
 }
