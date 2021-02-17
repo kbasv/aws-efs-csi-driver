@@ -3,8 +3,9 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"k8s.io/utils/mount"
 	"os"
+	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/onsi/ginkgo"
@@ -160,8 +161,8 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 		FileSystemId = id
 		ginkgo.By(fmt.Sprintf("Created EFS filesystem %q in region %q for cluster %q", FileSystemId, Region, ClusterName))
 		//Sleep 5 minutes to allow file system bootstrapping
-		ginkgo.By("Sleeping 5 minutes to allow file system bootstrapping")
-		time.Sleep(5 * time.Minute)
+		ginkgo.By("Sleeping 3 minutes to allow file system bootstrapping")
+		time.Sleep(3 * time.Minute)
 		ginkgo.By("Done sleeping. Now proceeding to test access point creation")
 		accessPointId, err := c.CreateAccessPoint(FileSystemId, ClusterName)
 		if err != nil {
@@ -170,21 +171,45 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 		ginkgo.By(fmt.Sprintf("Created access point %q", accessPointId))
 
 		ginkgo.By("Now proceeding to mount using access point")
-		mountOptions := []string{"tls", "accesspoint=" + accessPointId}
-		target := "/mnt/accessPointTest"
+		//mountOptions := []string{"tls", "accesspoint=" + accessPointId}
+		target := "accessPointTest"
+
 		if err = makeDir(target); err != nil {
 			framework.ExpectNoError(err, fmt.Sprintf("Failed to create temp directory %q", target))
 		}
 
 		defer os.RemoveAll(target)
 
-		m := mount.New("")
-		if err = m.Mount(FileSystemId, target, "efs", mountOptions); err != nil {
+		command := exec.Command("/bin/sh","-c", "sudo mount","-t","efs","-o", "tls,accesspoint=" + accessPointId, FileSystemId, target)
+
+		if err = command.Run(); err != nil {
 			framework.ExpectNoError(err, "Failed to mount using access point")
 		}
 
+		ginkgo.By("Sleeping 3 minutes to allow mount bootstrapping")
+		time.Sleep(3 * time.Minute)
+		ginkgo.By("Done sleeping. Now proceeding Unmount")
+
 		ginkgo.By("Mount succeeded, now unmounting...")
-		m.Unmount(target)
+
+		/*m := mount.New("")
+		if err = m.Mount(FileSystemId, target, "efs", mountOptions); err != nil {
+			framework.ExpectNoError(err, "Failed to mount using access point")
+
+
+		ginkgo.By("Mount succeeded, now unmounting...")
+		m.Unmount(target)*/
+
+		command = exec.Command("/bin/sh","-c", "sudo umount", target)
+
+		if err = command.Run(); err != nil {
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					ginkgo.By(fmt.Sprintf("Exit Status: %d", status.ExitStatus()))
+				}
+			}
+			//framework.ExpectNoError(err, "Failed to unmount")
+		}
 
 		ginkgo.By("Unmount succeeded, now proceeding to delete access point...")
 

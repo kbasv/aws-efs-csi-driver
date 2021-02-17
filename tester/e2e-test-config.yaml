@@ -1,6 +1,6 @@
 cluster:
   kops:
-    stateFile: s3://k8s-kops-csi-e2e
+    stateFile: s3://kbbasav-k8s-kops-csi-e2e
     zones: us-west-2a,us-west-2b,us-west-2c
     nodeCount: 3
     nodeSize: c5.large
@@ -36,7 +36,7 @@ install: |
   helm_name=helm-v3.1.1-linux-amd64.tar.gz
   wget https://get.helm.sh/$helm_name
   tar xvzf $helm_name
-  mv $OS_ARCH/helm /usr/local/bin/helm
+  sudo mv $OS_ARCH/helm /usr/local/bin/helm
 
   AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
   IMAGE_TAG={{TEST_ID}}
@@ -56,4 +56,4 @@ uninstall: |
 test: |
   export KUBECONFIG=$HOME/.kube/config
   cluster_name=test-cluster-{{TEST_ID}}.k8s.local
-  go test ./test/e2e/ -v -timeout=0 -kubeconfig=$HOME/.kube/config --cluster-name=$cluster_name --region=us-west-2 --report-dir=$ARTIFACTS -ginkgo.focus="\[efs-csi\]" -ginkgo.skip="\[Disruptive\]"
+  go test ./test/e2e/ -v -timeout=0 -kubeconfig=$HOME/.kube/config --cluster-name=$cluster_name --region=us-west-2 --report-dir="./results" -ginkgo.focus="\[efs-csi\]" -ginkgo.skip="\[Disruptive\]"
